@@ -1,0 +1,287 @@
+"""
+ImplantSimulateDataset.py
+
+MIT License
+
+Copyright (c) 2020 Alexandros Benetatos
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+"""
+DESCRIPTION
+
+A class used to simulate the percepted image of a person with a retinal implant for each sample of a Dataset
+
+"""
+
+import os
+import torch
+import pickle
+import numpy as np
+from PIL import Image
+from tqdm.autonotebook import tqdm
+from skimage.transform import resize
+
+class ImplantSimulateDataset():
+    def __init__(self, implant, trainset, testset, dataset_name, model, base_data_dir,
+                 train_work_samples=None, test_work_samples=None):
+        if hasattr(trainset, 'data') and hasattr(testset, 'data'):
+            self.out_size = np.array(trainset.data[0]).squeeze().shape
+        else:
+            raise TypeError("Only pytorch dataset objects with 'data' attribute are supported for trainset and testset")
+
+        if str(type(implant)).split('.')[-1][:-2] == 'ArgusII':
+            self.implant_name = 'ArgusII'
+        else:
+            self.implant_name = implant.name
+
+        self.implant       = implant
+        self.dataset_name  = dataset_name
+        self.model_name    = str(type(model)).split('.')[-1][:-2]
+        self.model         = model
+        self.trainset      = trainset
+        self.testset       = testset
+        self.base_data_dir = base_data_dir
+
+        self.work_with_subset(train_work_samples, test_work_samples)
+
+        self.calculate_zipped_args()
+
+    def change_implant(self, implant):
+        self.implant_name = implant.name
+        self.implant      = implant
+
+        self.calculate_and_create_path_names()
+        self.calculate_zipped_args() #maybe not
+
+    def change_model(self, model):
+        self.model_name = str(type(model)).split('.')[-1][:-2]
+        self.model      = model
+
+        self.calculate_and_create_path_names()
+        self.calculate_zipped_args() #maybt not
+
+    def calculate_and_create_path_names(self):
+        self.percept_path       = os.path.join(self.base_data_dir, self.dataset_name,
+                                               'percept', self.model_name+'-'+self.implant_name)
+        self.percept_path_test  = os.path.join(self.percept_path, 'test')
+        self.percept_path_train = os.path.join(self.percept_path, 'train')
+
+        if not os.path.exists(self.percept_path):
+            os.makedirs(self.percept_path)
+        if not os.path.exists(self.percept_path_test):
+            os.makedirs(self.percept_path_test)
+        if not os.path.exists(self.percept_path_train):
+            os.makedirs(self.percept_path_train)
+
+    def work_with_subset(self, train_work_samples=None, test_work_samples=None):
+        def equal_subset(dataset, samples):
+            data   = np.array(dataset.data)
+            labels = np.array(dataset.targets)
+
+            labels_number     = len(np.unique(labels))
+            samples_per_label = int(samples/labels_number)
+
+            whr_subset = np.concatenate([np.argwhere(labels==i).flatten()[:samples_per_label]
+                                         for i in range(labels_number)]).flatten()
+            return (data[whr_subset], labels[whr_subset])
+
+        if train_work_samples is not None:
+            self.dataset_name  = self.dataset_name+'_'+str(train_work_samples)
+            self.work_trainset = equal_subset(self.trainset, train_work_samples)
+        else:
+            self.dataset_name  = self.dataset_name+'_all'
+            self.work_trainset = (np.array(self.trainset.data), np.array(self.trainset.targets))
+
+        if test_work_samples is not None:
+            self.dataset_name = self.dataset_name+'_'+str(test_work_samples)
+            self.work_testset = equal_subset(self.testset, test_work_samples)
+        else:
+            self.dataset_name = self.dataset_name+'_all'
+            self.work_testset = (np.array(self.testset.data), np.array(self.testset.targets))
+
+        if self.dataset_name.endswith('_all_all'):
+            self.dataset_name = self.dataset_name.split('_all_all')[0]
+
+        self.calculate_and_create_path_names()
+
+    def min_max_scaling(self, dat):
+        return (dat-dat.min())/(dat.max()-dat.min())
+
+    # transform an image to a stimuli for the implant's electrodes
+    def img2stim(self, img):
+        img   = np.array(img).squeeze()
+
+        # find where the image is completely black and cut out that area
+        npwhr = np.where(img > 0.05)
+        ymin  = min(npwhr[0])
+        ymax  = max(npwhr[0])
+        xmin  = min(npwhr[1])
+        xmax  = max(npwhr[1])
+
+        # if the "cropped" image is too tall (the height is more than double the width)
+        # then don't cut it on the x axis (for example the '1' of the MNIST dataset)
+        if 2*(xmax - xmin) < (ymax - ymin):
+            xmin = 0
+            xmax = img.shape[1]
+
+        # do the actual cropping, resize the image to fully fit the implant
+        # to have the maximum use of the electrodes and flatten it for use
+        return resize(img[ymin:ymax, xmin:xmax], self.implant.earray.shape).flatten()
+
+    # take the flattened stimuli (from img2stim) and return an 2-D array representing and image
+    def img2implant_img(self, img):
+        return np.reshape(self.img2stim(img), self.implant.earray.shape)
+
+    def perc2img(self, percept):
+        data  = percept.data.squeeze()
+        npwhr = np.where(data > 0.01)
+
+        ymin = min(npwhr[0])
+        ymax = max(npwhr[0])
+        xmin = min(npwhr[1])
+        xmax = max(npwhr[1])
+
+        data = resize(data[ymin:ymax, xmin:xmax], self.out_size)
+        data = self.min_max_scaling(data)
+
+        return Image.fromarray(np.uint8(data*255))
+        # return torch.from_numpy(resize(data[ymin:ymax, xmin:xmax], self.out_size))
+
+    def calculate_zipped_args(self):
+        # exclude files that have already been simulated - valid (size > 0) image files (.png) 
+        def filter_function(path, file):
+            return file.endswith('.png') and os.path.getsize(os.path.join(path, file)) > 0
+
+        def zip_args(dataset, path):
+            all_files = os.listdir(os.path.abspath(path))
+            excl_file_numbers = []
+
+            if all_files is not None:
+                ex_dataset_files  = list(filter(lambda file: filter_function(path, file), all_files))
+                excl_file_numbers = [int(dataset_file.split('-')[0]) for dataset_file in ex_dataset_files]
+
+            data   = dataset[0]
+            labels = dataset[1]
+
+            return [[d, t.item(), i]
+                    for i, (d, t), in enumerate(zip(data, labels))
+                    if i not in excl_file_numbers
+                   ]
+
+        self.zipped_test_args  = zip_args(self.work_testset , self.percept_path_test)
+        self.zipped_train_args = zip_args(self.work_trainset, self.percept_path_train)
+
+    def print_info(self, plot=True):
+        if plot:
+            self.implant.plot_on_axon_map()
+        print(self)
+
+    def __str__(self):
+        return self.__repr__()+"\n" + \
+               f"Implant Name      : {self.implant_name}\n" + \
+               f"Model   Name      : {self.model_name}\n"   + \
+               f"Dataset Name      : {self.dataset_name}\n" + \
+               f"Output  Directory : {self.percept_path}\n" + \
+               f"Number of train samples to simulate: {len(self.zipped_train_args)}\n" + \
+               f"Number of test  samples to simulate: {len(self.zipped_test_args)}"
+
+    def one_loop(self, img, label, idx, path):
+        img = np.array(img).squeeze()
+        self.implant.stim = self.img2stim(img)
+        percept = self.model.predict_percept(self.implant)
+        img = self.perc2img(percept)
+        img.save(os.path.join(path, f'{idx}-{label}.png'), compress_level=0)
+        # torch.save(img, os.path.join(path, f'{idx}-{label}.pt'))
+
+    def one_train_loop(self, img, label, idx):
+        self.one_loop(img, label, idx, self.percept_path_train)
+
+    def one_test_loop(self, img, label, idx):
+        self.one_loop(img, label, idx, self.percept_path_test)
+
+    @staticmethod
+    def create_dataset(path=None, out_path=None, save=True, return_dataset=False, output=True, p_bar=True):
+        # function to "create" one sample from its name and path
+        def one_sample(path, sample_name):
+            # keep only those with size greater than zero '0'
+            if os.path.getsize(os.path.join(path, sample_name)) <= 0:
+                return None
+            # extract the sample labels from each name
+            sample_label = int(sample_name.split('-')[1].split('.')[0])
+            # load sample data
+            img_fp = Image.open(os.path.join(path, sample_name))
+            sample_data = img_fp.copy()
+            img_fp.close()
+
+            return sample_data, sample_label
+
+        # function to "create" a samples list from a folder path
+        def multiple_samples(path):
+            if output:
+                print(f"Create samples list from path: {path}")
+            samples_names  = os.listdir(path)
+            samples_names  = list(filter(lambda file: file.endswith('.png'), samples_names))
+            samples_labels = []
+            samples_data   = []
+            if p_bar==True:
+                iterator = tqdm(samples_names)
+            else:
+                iterator = samples_names
+            for sample_name in iterator:
+                sample = one_sample(path, sample_name)
+                if sample is None:
+                    print(os.path.join(path, sample_name))
+                    continue
+                sample_data, sample_label = sample
+                samples_labels.append(sample_label)
+                samples_data.append(sample_data)
+
+            return samples_data, samples_labels
+
+        if path is None:
+            path = self.percept_path
+
+        train_samples_data, train_samples_labels = multiple_samples(os.path.join(path, 'train'))
+        test_samples_data,  test_samples_labels  = multiple_samples(os.path.join(path, 'test' ))
+
+        if save:
+            if out_path is None:
+                out_path = os.path.join(self.base_data_dir, self.dataset_name,
+                                        'processed', self.model_name+'-'+self.implant_name)
+
+            # create path if not already there
+            if not os.path.exists(out_path):
+                os.makedirs(out_path)
+
+            # save labels Tensors in their respective files
+            torch.save(train_samples_labels, os.path.join(out_path, 'train_set_labels.pt'))
+            torch.save(test_samples_labels,  os.path.join(out_path, 'test_set_labels.pt'))
+
+            # save data list in their respective pickles
+            with open(os.path.join(out_path, 'train_set_data.pk'), "wb") as f:
+                pickle.dump(train_samples_data, f)
+
+            with open(os.path.join(out_path, 'test_set_data.pk' ), "wb") as f:
+                pickle.dump(test_samples_data,  f)
+
+        if output:
+            return ((train_samples_data, train_samples_labels),
+                    (test_samples_data, test_samples_labels))
