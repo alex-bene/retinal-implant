@@ -31,12 +31,13 @@ A torch.utils.data.Dataset subclass for pytorch to load the custom dataset creat
 generated from stimulating square retinal implants with the 28x28 handwritten digits from MNIST dataset
 """
 
+import numpy as np
 import pickle
 import torch
 import os
 
 class MNISTpulse2percept(torch.utils.data.Dataset):
-	def __init__(self, path, val_perc=0, train=True, val=False, transform=None):
+	def __init__(self, path, val_perc=0, train=True, val=False, transform=None, subset_samples=None):
 		# check if path exists
 		if not os.path.exists(path):
 			raise NameError("Path does not exist, change it or run create_dataset first")
@@ -52,22 +53,46 @@ class MNISTpulse2percept(torch.utils.data.Dataset):
 		# labels (integers) saved with torch.save (from a list of ints)
 		self.targets = torch.load(os.path.join(path, dset_type+"_set_labels.pt"))
 
+		if isinstance(self.targets, list):
+			self.targets = np.array(self.targets)
+
 		# save the desired transforms to apply to each data sample
 		self.transform = transform
+
+		# # set validation set percentage (wrt the training set size)
+		# train_size = round((1 - val_perc) * data_size)
+
+		if subset_samples is not None:
+			self.get_equal_subset(subset_samples)
 
 		# get dataset dimensions
 		data_size  = len(self.data)
 
-		# set validation set percentage (wrt the training set size)
-		train_size = round((1 - val_perc) * data_size)
-
 		if val:
-			# Reserve val_size samples for validation
-			self.data    = self.data[   train_size:]
-			self.targets = self.targets[train_size:]
+			self.get_equal_subset(round(val_perc * data_size))
+			# # Reserve val_size samples for validation
+			# self.data    = self.data[   train_size:]
+			# self.targets = self.targets[train_size:]
 		elif train:
-			self.data    = self.data[   :train_size]
-			self.targets = self.targets[:train_size]
+			self.get_equal_subset(round((1 - val_perc) * data_size))
+			# self.data    = self.data[   :train_size]
+			# self.targets = self.targets[:train_size]
+
+	def get_equal_subset(self, samples):
+		if samples == 0 or samples == len(self.data):
+			return
+
+		if not hasattr(self, 'orig_data'):
+			self.orig_data    = self.data.copy()
+			self.orig_targets = self.targets.copy()
+
+		targets_number     = len(np.unique(self.orig_targets))
+		samples_per_target = int(samples/targets_number)
+		whr_subset = np.concatenate([np.argwhere(self.orig_targets==i).flatten()[:samples_per_target]
+		                             for i in range(targets_number)]).flatten()
+
+		self.data    = [dt for idx, dt in enumerate(self.orig_data)    if idx in whr_subset]
+		self.targets = [dt for idx, dt in enumerate(self.orig_targets) if idx in whr_subset]
 
 	def __len__(self):
 		return len(self.data)
