@@ -20,7 +20,7 @@ setup(
           'scikit-image',
           'matplotlib',
           'pytorchUtils==0.0.3',
-          'pulse2percept==0.7.0',
+          'pulse2percept==0.7.0.dev0',
                    ],
   classifiers=[
     'Development Status :: 4 - Beta', # Chose either "3 - Alpha", "4 - Beta" or "5 - Production/Stable" as the current state of your package
