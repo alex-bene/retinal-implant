@@ -10,7 +10,7 @@ setup(
   author = 'Alexandros Benetatos',
   author_email = 'alexandrosbene@gmail.com',
   url = 'https://github.com/alex-bene/retinal-implants-utils',
-  download_url = 'https://github.com/alex-bene/retinal-implants-utils/archive/v0.0.2-beta.tar.gz',
+  download_url = 'https://github.com/alex-bene/retinal-implants-utils/releases/download/v0.0.2-beta/retinal_implants_utils-0.0.2.tar.gz',
   keywords = ['retinal implants', 'pulse2percept', 'utilities'],
   install_requires=[
           'tqdm',
