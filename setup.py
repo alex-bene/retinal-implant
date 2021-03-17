@@ -3,13 +3,13 @@ from distutils.core import setup
 setup(
   name = 'retinal_implant_utils',
   packages = ['retinal_implant_utils'],
-  version = '0.0.1',
+  version = '0.0.2',
   license='MIT',
-  description = 'Utilities to help with retinal implants simulation and evaluation,
+  description = 'Utilities to help with retinal implants simulation and evaluation',
   author = 'Alexandros Benetatos',
   author_email = 'alexandrosbene@gmail.com',
-  url = 'https://github.com/alex-bene/retinal-implants',
-  download_url = 'https://github.com/alex-bene/retinal-implants/archive/v0.0.1-beta.tar.gz',
+  url = 'https://github.com/alex-bene/retinal-implants-utils',
+  download_url = 'https://github.com/alex-bene/retinal-implants-utils/archive/v0.0.2-beta.tar.gz',
   keywords = ['retinal implants', 'pulse2percept', 'utilities'],
   install_requires=[
           'tqdm',
@@ -17,9 +17,10 @@ setup(
           'torch',
           'pillow',
           'pickle',
-          'skimage',
-          'pytorchUtils',
-          'pulse2percept',
+          'scikit-image',
+          'matplotlib',
+          'pytorchUtils=0.0.3',
+          'pulse2percept=0.7.0',
                    ],
   classifiers=[
     'Development Status :: 4 - Beta', # Chose either "3 - Alpha", "4 - Beta" or "5 - Production/Stable" as the current state of your package
