@@ -17,7 +17,6 @@ setup(
           'numpy',
           'torch',
           'pillow',
-          'pickle',
           'scikit-image',
           'matplotlib',
           'pytorchUtils==0.0.3',
