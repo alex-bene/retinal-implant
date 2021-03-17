@@ -1,8 +1,9 @@
 from distutils.core import setup
+from setuptools import find_packages
 
 setup(
   name = 'retinal_implants_utils',
-  packages = ['retinal_implants_utils'],
+  packages = find_packages(),
   version = '0.0.2',
   license='MIT',
   description = 'Utilities to help with retinal implants simulation and evaluation',
