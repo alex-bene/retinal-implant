@@ -27,9 +27,7 @@ SOFTWARE.
 """
 DESCRIPTION
 
-Just a file to be able to use retinal_implants_utils as a module and import it
+Just a file to be able to use CustomImplants as a module and import it
 """
 
-from . import CustomImplants
-from .DatasetP2P             import DatasetP2P
-from .ImplantSimulateDataset import ImplantSimulateDataset
+from .SquareImplant import SquareImplant
